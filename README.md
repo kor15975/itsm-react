@@ -1,16 +1,253 @@
-# React + Vite
+# ITSM Admin — React 재구현
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+OutSystems ODC로 개발한 **교육기관 ITSM 서비스의 관리자 화면을 React로 다시 만들어본 프로젝트**입니다.
+같은 화면을 로우코드 플랫폼과 React로 각각 만들어보며 두 방식의 차이를 확인하기 위해 만들었습니다.
 
-Currently, two official plugins are available:
+**Live** — https://itsm-react-jjw8.vercel.app/
+**Stack** — React 19, React Router, Vite, CSS
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+---
 
-## React Compiler
+## 원본 프로젝트와의 관계
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+이 저장소를 보실 때 아래 세 가지를 먼저 알아두셔야 합니다.
 
-## Expanding the Oxlint configuration
+- **원본은 팀 프로젝트입니다.** 교육과정에서 5인이 OutSystems ODC로 개발한 Agentic AI 기반 교육운영 ITSM 서비스이며, 저는 **전체 화면 설계와 UI 구현, 분류·배정 Agent, 유사사례 검색 Agent**를 담당했습니다. 전체 DB 설계, SLA Agent, 알림 시스템, 업무공유 기능은 다른 팀원이 담당했습니다.
+- **이 React 버전은 개인 학습용 재구현입니다.** 원본 코드를 옮긴 것이 아니라, 제가 설계했던 화면을 React로 처음부터 다시 만들었습니다.
+- **서버가 없습니다.** 데이터는 `src/data/requests.js` 의 목업 30건이며, 실제 운영 데이터가 아닙니다.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+우선순위 산출 규칙만은 원본 프로젝트에서 사용한 PriorityMatrix와 동일하게 옮겼습니다. 이 프로젝트에서 가장 보여드리고 싶은 부분이기 때문입니다.
+
+---
+
+## 왜 다시 만들었나
+
+ODC로 화면을 만들 때, 저는 **왜 그렇게 되는지 모른 채 만들고 있었습니다.**
+
+Aggregate로 데이터를 가져오면 List Widget이 알아서 목록을 그려주고, 변수를 바꾸면 화면이 따라 바뀝니다. 동작은 했지만 그 사이에서 무슨 일이 일어나는지는 설명할 수 없었습니다.
+
+플랫폼이 감춰둔 부분을 직접 만들어보면 알 수 있을 것 같았습니다.
+기능 설계에 시간을 쓰지 않으려고 **이미 만들어본 화면을** 골랐습니다.
+
+---
+
+## 구현한 화면
+
+### 1. 관리자 요청 목록
+
+- 번호 / 제목 / 요청자 / 담당자 통합 검색
+- 상태 · 우선순위 필터 (동시 적용)
+- 페이지네이션 (10건 단위)
+- 조건에 맞는 요청이 없을 때 안내 표시
+
+### 2. 요청 상세
+
+- AI 추천값과 최종 적용값 비교
+- **영향도 · 긴급도 변경 시 우선순위 자동 재계산**
+- AI 판단 근거 표시
+- 처리 기한 및 완료 일시
+- 진행 현황 타임라인
+
+### 3. 관리자 대시보드
+
+- AI 승인 대기 / 전체 미해결 / 긴급·우선 / SLA 임박·초과 집계
+- 분류·배정 검토 대기 목록
+- 상태별 분포
+- 담당자별 미해결 현황
+
+---
+
+## 핵심 — 우선순위를 상태로 두지 않은 이유
+
+원본 프로젝트에서 겪은 문제가 하나 있었습니다.
+
+분류·배정 Agent가 **판단 근거가 부족한 상황에서도 우선순위 기본값을 임의로 채워** 내보냈습니다. AI에게 너무 많은 판단을 한 번에 맡긴 것이 원인이었습니다.
+
+그래서 역할을 나눴습니다.
+
+- **AI가 판단하는 것** — 분류, 세부분류, 영향도, 긴급도
+- **시스템이 계산하는 것** — 우선순위 (영향도 × 긴급도 조회표)
+
+React로 옮기면서 이 분리가 코드에 그대로 드러났습니다.
+
+```jsx
+const [impact, setImpact] = useState(req.impact); // AI 판단 — 사람이 수정 가능
+const [urgency, setUrgency] = useState(req.urgency); // AI 판단 — 사람이 수정 가능
+
+const priority = getPriority(impact, urgency); // 규칙 조회 — 아무도 직접 못 바꿈
+```
+
+`priority` 를 `useState` 로 만들면 누군가 임의로 값을 넣을 수 있는 자리가 생깁니다.
+**계산으로만 존재하게 두면 그 자리가 아예 없습니다.**
+
+상세 화면에서 영향도나 긴급도를 바꿔보시면 우선순위가 즉시 다시 계산됩니다.
+
+```js
+// src/data/priority.js
+export const PRIORITY_MATRIX = {
+  "높음-높음": "긴급",
+  "높음-보통": "높음",
+  "보통-높음": "높음",
+  "높음-낮음": "보통",
+  "보통-보통": "보통",
+  "낮음-높음": "보통",
+  "보통-낮음": "낮음",
+  "낮음-보통": "낮음",
+  "낮음-낮음": "낮음",
+};
+```
+
+---
+
+## ODC와 React
+
+만들어보니 개념은 거의 같았고, 다른 것은 **누가 그 일을 하느냐**였습니다.
+
+| ODC                    | React         | 하는 일                   |
+| ---------------------- | ------------- | ------------------------- |
+| Web Block              | 컴포넌트      | 반복되는 화면 조각        |
+| Input Parameter        | props         | 조각에 넘기는 값          |
+| Local Variable         | `useState`    | 화면이 기억하는 값        |
+| List Widget            | `.map()`      | 목록 반복                 |
+| Aggregate 필터         | `.filter()`   | 조건에 맞는 데이터 추리기 |
+| Screen Input Parameter | `useParams()` | 화면 간 값 전달           |
+
+가장 크게 느낀 차이는 **목록 필터링**이었습니다.
+
+ODC에서는 Aggregate에 조건을 걸면 결과가 화면에 반영됩니다. 그 사이 과정은 플랫폼이 처리합니다.
+React에서는 그 과정을 직접 씁니다.
+
+```jsx
+const visibleRequests = requests.filter((req) => {
+  const matchKeyword = text.includes(keyword.toLowerCase());
+  const matchStatus = status === "전체" || req.status === status;
+  const matchPriority = priority === "전체" || req.priority === priority;
+  return matchKeyword && matchStatus && matchPriority;
+});
+```
+
+직접 쓰고 나서야 ODC에서 하던 일이 무엇이었는지 알았습니다.
+그리고 조건을 하나 더 얹을 때 어디를 고쳐야 할지 바로 알게 됐습니다.
+
+---
+
+## 막혔던 지점
+
+### 1. 계산은 맞는데 화면이 다른 값을 보고 있었다
+
+검색을 걸면 "총 N건" 은 정확히 줄어드는데 표는 그대로였습니다.
+원인은 `<tbody>` 가 걸러진 배열이 아니라 원본을 그대로 쓰고 있던 것이었습니다.
+
+```jsx
+{requests.map(...)}       // 원본
+{pageItems.map(...)}      // 수정
+```
+
+이 프로젝트는 계산이 두 단계(`visibleRequests` → `pageItems`)라 더 헷갈렸습니다.
+**화면에 값을 쓰는 곳이 여러 군데면(건수 표시·빈 상태·표) 그중 하나만 놓쳐도 앞뒤가 안 맞습니다.**
+
+### 2. 서로 맞물린 상태는 같이 바꿔야 한다
+
+페이지네이션을 붙이면서 알게 된 부분입니다.
+
+3페이지를 보다가 검색어를 입력하면 결과는 5건으로 줄어드는데 `page` 는 여전히 3입니다.
+`slice(20, 30)` 이 빈 배열을 돌려주고, **건수는 5건인데 표는 텅 빈** 상태가 됩니다. 에러는 나지 않습니다.
+
+그래서 필터가 바뀌는 모든 자리에서 페이지를 1로 되돌립니다.
+
+```jsx
+onChange={(e) => { setKeyword(e.target.value); setPage(1) }}
+```
+
+### 3. 배포한 뒤에야 드러나는 문제가 있다
+
+배포 후 대시보드에서 새로고침하면 404가 났습니다. 링크로 이동하는 건 정상이었습니다.
+
+React Router는 브라우저 안에서 주소 표시만 바꾸고 화면을 갈아끼웁니다. 그런데 새로고침을 하면 브라우저가 **서버에게 `/dashboard` 를 요청**하고, 서버에는 `index.html` 하나뿐이라 없는 주소가 됩니다.
+
+로컬 개발 서버는 이걸 알아서 처리해주기 때문에 **배포 전에는 절대 나타나지 않습니다.**
+
+```json
+// vercel.json — 어떤 주소로 들어오든 index.html을 내준다
+{
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+}
+```
+
+### 4. 화면이 맞아도 데이터가 이상하면 화면이 이상해진다
+
+대시보드 숫자를 검산하다가 **SLA 임박·초과가 전체 미해결과 같은 18건**인 것을 발견했습니다.
+
+집계 코드는 맞았습니다. 목업 데이터의 요청일을 17일에 걸쳐 흩어놓고 오래된 건까지 미해결로 남겨둔 탓에, 열려 있는 요청이 전부 기한 초과가 된 것이었습니다.
+
+종결된 요청은 과거로, 미해결 요청은 최근으로 날짜를 다시 배치해 해결했습니다.
+**화면을 의심하기 전에 데이터를 먼저 봐야 하는 경우**가 있다는 걸 알게 됐습니다.
+
+### 5. 이름이 틀리면 조용히 넘어간다
+
+가장 시간을 많이 쓴 부류입니다. 전부 에러 없이 잘못된 화면만 나옵니다.
+
+- `'seg' + className` — 공백이 빠져 `"segrecv"` 라는 없는 클래스가 됨
+- `req.aiReason` 대신 `req.aiAssignee` — 자동완성이 비슷한 이름을 먼저 제안
+- `<statusCount />` — 소문자로 시작하면 React가 HTML 태그로 취급해 그냥 넘어감
+- `s.replace('', 'T')` — 공백 대신 빈 문자열을 찾아 `Invalid Date` 가 됨
+
+화면이 이상한데 콘솔이 조용하면 **개발자 도구에서 실제 결과물을 보는 것**이 가장 빨랐습니다. 클래스명이 무엇으로 찍혔는지 한 번 보면 대부분 끝났습니다.
+
+---
+
+## 배운 점
+
+### 계산할 수 있는 값은 상태로 두지 않는다
+
+이 프로젝트에서 얻은 가장 큰 기준입니다.
+
+- 목록의 `visibleRequests` — `requests` 와 필터값으로 계산
+- 상세의 `priority` — 영향도와 긴급도로 계산
+- 대시보드의 모든 숫자 — `requests` 로 계산 (`useState` 가 한 줄도 없습니다)
+
+상태가 적을수록 어긋날 자리가 줄어듭니다.
+그리고 **우선순위처럼 규칙으로 정해져야 하는 값은, 계산으로만 존재하게 두는 것이 곧 설계**라는 것도 알게 됐습니다.
+
+### 플랫폼이 해주던 일을 알게 됐다
+
+ODC에서 Web Block을 제대로 몰라 같은 화면 구성을 반복해서 만들었습니다.
+React에서 `StatusBadge`, `PriorityTag`, `StatCard` 를 분리해보고 나서야 그게 무엇이었는지 이해했습니다.
+
+지금 ODC로 돌아가면 Block을 쓸 수 있을 것 같습니다.
+로우코드를 쓰더라도 안에서 무슨 일이 일어나는지 아는 것과 모르는 것은 다르다고 느꼈습니다.
+
+### 아직 부족한 부분
+
+- 상태 관리는 `useState` 수준입니다. 화면이 늘어나 데이터를 공유해야 하면 다른 방법이 필요할 텐데 아직 다뤄보지 않았습니다.
+- 서버 연동 경험이 없습니다. 목업 배열을 읽는 것과 API를 호출하는 것은 다른 문제라고 알고 있습니다.
+- `useEffect` 를 아직 쓸 일이 없어 익히지 못했습니다.
+
+---
+
+## 실행 방법
+
+```bash
+npm install
+npm run dev
+```
+
+---
+
+## 프로젝트 구조
+
+```
+src/
+  data/
+    requests.js      목업 데이터 30건
+    priority.js      우선순위 산출 규칙 (PriorityMatrix)
+  components/
+    StatusBadge.jsx
+    PriorityTag.jsx
+    StatCard.jsx
+  pages/
+    RequestList.jsx
+    RequestDetail.jsx
+    Dashboard.jsx
+  App.jsx            라우팅 · 공통 헤더
+```
