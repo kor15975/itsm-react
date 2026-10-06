@@ -949,3 +949,92 @@ table {
 .btn-save:disabled { background: #d5d8e2; cursor: default; }
 
 .save-msg { font-size: 13px; color: var(--gray); }
+
+
+/* =========================================================
+   App.css 맨 아래에 이어 붙이세요 — 요청 등록 폼
+   ========================================================= */
+
+.form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 20px;
+  align-items: start;
+}
+
+.form-grid > .card { margin: 0; }
+
+.field { margin-bottom: 16px; }
+.field:last-of-type { margin-bottom: 0; }
+
+.field label {
+  display: block;
+  margin-bottom: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--gray);
+}
+
+.field input,
+.field textarea,
+.field select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--ink);
+  line-height: 1.6;
+}
+
+.field input:focus,
+.field textarea:focus,
+.field select:focus {
+  outline: none;
+  border-color: var(--indigo);
+}
+
+.field input::placeholder,
+.field textarea::placeholder { color: #b6bcca; }
+
+.field textarea { resize: vertical; min-height: 120px; }
+.field select { cursor: pointer; }
+
+/* 분류·판단 카드 안의 계산 결과 */
+
+.form-grid .prio-box { margin-top: 20px; }
+.form-grid .sla-box { margin-top: 14px; }
+
+/* 하단 버튼 줄 */
+
+.form-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  padding-top: 4px;
+}
+
+.form-err {
+  font-size: 13px;
+  color: #b42318;
+}
+
+.form-actions .btn-save {
+  height: 42px;
+  padding: 0 28px;
+  font-size: 14px;
+}
+
+@media (max-width: 1024px) {
+  .form-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  .form-actions { flex-direction: column-reverse; align-items: stretch; }
+  .form-actions .btn-save { width: 100%; }
+  .form-err { text-align: center; }
+}
