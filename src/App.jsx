@@ -2,6 +2,7 @@ import{Routes, Route, NavLink} from 'react-router-dom'
 import Dashboard from './pages/Dashboard';
 import RequestList from "./pages/RequestList";
 import RequestDetail from './pages/RequestDetail';
+import RequestNew from './pages/RequestNew'
 import "./App.css";
 
 
@@ -21,16 +22,18 @@ function App() {
           <nav className="gnb-nav">
             <NavLink to="/dashboard">대시보드</NavLink>
             <NavLink to="/" end>요청 목록</NavLink>
+            <NavLink to="/requests/new">요청 등록</NavLink>
           </nav>
           <span className="gnb-user">2AD_관리자</span>
         </div>
       </header>
       <main>
         <Routes>
-          <Route path='/' element={<RequestList/>}></Route>
-          <Route path='/dashboard' element={<Dashboard/>}></Route>
-          <Route path="/requests/:id" element={<RequestDetail/>}></Route>
-        </Routes>
+  <Route path="/" element={<RequestList />} />
+  <Route path="/dashboard" element={<Dashboard />} />
+  <Route path="/requests/new" element={<RequestNew />} />
+  <Route path="/requests/:id" element={<RequestDetail />} />
+</Routes>
       </main>
     </div>
   );
