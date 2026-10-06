@@ -4,7 +4,7 @@ OutSystems ODC로 개발한 **교육기관 ITSM 서비스의 관리자 화면을
 같은 화면을 로우코드 플랫폼과 React로 각각 만들어보며 두 방식의 차이를 확인하기 위해 만들었습니다.
 
 **Live** — https://itsm-react-jjw8.vercel.app/
-**Stack** — React 19, React Router, Vite, CSS
+**Stack** — React 19, React Router, Vite, Supabase(REST API)
 
 ---
 
@@ -14,7 +14,7 @@ OutSystems ODC로 개발한 **교육기관 ITSM 서비스의 관리자 화면을
 
 - **원본은 팀 프로젝트입니다.** 교육과정에서 4인이 OutSystems ODC로 개발한 Agentic AI 기반 교육운영 ITSM 서비스이며, 저는 **전체 화면 설계와 UI 구현, 분류·배정 Agent, 유사사례 검색 Agent**를 담당했습니다. 전체 DB 설계, SLA Agent, 알림 시스템, 업무공유 기능은 다른 팀원이 담당했습니다.
 - **이 React 버전은 개인 학습용 재구현입니다.** 원본 코드를 옮긴 것이 아니라, 제가 설계했던 화면을 React로 처음부터 다시 만들었습니다.
-- **서버가 없습니다.** 데이터는 `src/data/requests.js` 의 목업 30건이며, 실제 운영 데이터가 아닙니다.
+- **데이터는 목업입니다.** Supabase에 올린 30건의 예시 데이터이며, 실제 운영 데이터가 아닙니다.
 
 우선순위 산출 규칙만은 원본 프로젝트에서 사용한 PriorityMatrix와 동일하게 옮겼습니다. 이 프로젝트에서 가장 보여드리고 싶은 부분이기 때문입니다.
 
@@ -44,6 +44,7 @@ Aggregate로 데이터를 가져오면 List Widget이 알아서 목록을 그려
 
 - AI 추천값과 최종 적용값 비교
 - **영향도 · 긴급도 변경 시 우선순위 자동 재계산**
+- **변경사항 저장** (서버 반영)
 - AI 판단 근거 표시
 - 처리 기한 및 완료 일시
 - 진행 현황 타임라인
@@ -55,9 +56,11 @@ Aggregate로 데이터를 가져오면 List Widget이 알아서 목록을 그려
 - 상태별 분포
 - 담당자별 미해결 현황
 
+모든 화면은 **데이터를 불러오는 동안 로딩 상태를, 실패하면 에러 메시지를** 표시합니다.
+
 ---
 
-## 핵심 — 우선순위를 상태로 두지 않은 이유
+## 핵심 1 — 우선순위를 상태로 두지 않은 이유
 
 원본 프로젝트에서 겪은 문제가 하나 있었습니다.
 
@@ -71,8 +74,8 @@ Aggregate로 데이터를 가져오면 List Widget이 알아서 목록을 그려
 React로 옮기면서 이 분리가 코드에 그대로 드러났습니다.
 
 ```jsx
-const [impact, setImpact] = useState(req.impact); // AI 판단 — 사람이 수정 가능
-const [urgency, setUrgency] = useState(req.urgency); // AI 판단 — 사람이 수정 가능
+const [impact, setImpact] = useState("보통"); // AI 판단 — 사람이 수정 가능
+const [urgency, setUrgency] = useState("보통"); // AI 판단 — 사람이 수정 가능
 
 const priority = getPriority(impact, urgency); // 규칙 조회 — 아무도 직접 못 바꿈
 ```
@@ -80,7 +83,18 @@ const priority = getPriority(impact, urgency); // 규칙 조회 — 아무도 �
 `priority` 를 `useState` 로 만들면 누군가 임의로 값을 넣을 수 있는 자리가 생깁니다.
 **계산으로만 존재하게 두면 그 자리가 아예 없습니다.**
 
-상세 화면에서 영향도나 긴급도를 바꿔보시면 우선순위가 즉시 다시 계산됩니다.
+저장할 때도 마찬가지입니다. 화면 어디에도 우선순위를 직접 고르는 입력이 없고, 서버로 보내는 값은 계산 결과입니다.
+
+```jsx
+await updateRequest(req.id, {
+  impact,
+  urgency,
+  priority, // 계산된 값만 저장된다
+  assignee: assignee || null,
+});
+```
+
+**규칙을 우회할 경로가 화면에도 저장에도 없습니다.**
 
 ```js
 // src/data/priority.js
@@ -99,35 +113,92 @@ export const PRIORITY_MATRIX = {
 
 ---
 
+## 핵심 2 — 파일을 읽던 앱에서 서버와 통신하는 앱으로
+
+처음에는 데이터를 파일에서 바로 가져왔습니다.
+
+```jsx
+import { requests } from "../data/requests";
+```
+
+앱이 켜지는 순간 데이터가 이미 거기 있었습니다. 기다릴 것도, 실패할 것도 없었습니다.
+실제 웹 앱의 절반이 빠져 있던 셈입니다.
+
+### 라이브러리 대신 fetch를 쓴 이유
+
+Supabase는 전용 클라이언트 SDK를 제공하지만 쓰지 않았습니다.
+**SDK 문법은 그 서비스에서만 통하기 때문입니다.**
+
+대신 Supabase가 자동으로 열어주는 REST 엔드포인트를 `fetch` 로 직접 호출했습니다.
+
+```js
+export async function fetchRequests() {
+  const res = await fetch(
+    URL + "/rest/v1/requests?select=*&order=requestedAt.desc",
+    { headers },
+  );
+
+  if (!res.ok) {
+    throw new Error("요청 목록을 불러오지 못했습니다 (" + res.status + ")");
+  }
+
+  return res.json();
+}
+```
+
+평범한 REST 호출이라 **백엔드가 바뀌어도 주소와 헤더만 바꾸면 그대로 동작합니다.**
+Supabase는 "서버를 직접 만들 시간을 아끼기 위해 빌린 데이터 저장소"에 가깝습니다.
+
+### 화면 쪽
+
+```jsx
+const [requests, setRequests] = useState([]);
+const [loading, setLoading] = useState(true);
+const [error, setError] = useState(null);
+
+useEffect(() => {
+  fetchRequests()
+    .then((data) => setRequests(data))
+    .catch((err) => setError(err.message))
+    .finally(() => setLoading(false));
+}, []);
+```
+
+ODC에서 Screen의 OnReady에 Aggregate를 걸던 자리입니다.
+플랫폼이 알아서 해주던 "조회 중"과 "조회 실패"를 직접 다루게 됐습니다.
+
+### API 호출을 한 곳에 모았습니다
+
+```
+src/api/requests.js
+  fetchRequests()        목록 조회
+  fetchRequest(id)       단건 조회
+  updateRequest(id, ...) 수정 (PATCH)
+```
+
+컴포넌트는 "데이터를 달라"고만 하고, 주소·헤더·에러 처리는 이 파일이 맡습니다.
+서버가 바뀌어도 고칠 곳이 한 군데입니다.
+
+---
+
 ## ODC와 React
 
 만들어보니 개념은 거의 같았고, 다른 것은 **누가 그 일을 하느냐**였습니다.
 
-| ODC                    | React         | 하는 일                   |
-| ---------------------- | ------------- | ------------------------- |
-| Web Block              | 컴포넌트      | 반복되는 화면 조각        |
-| Input Parameter        | props         | 조각에 넘기는 값          |
-| Local Variable         | `useState`    | 화면이 기억하는 값        |
-| List Widget            | `.map()`      | 목록 반복                 |
-| Aggregate 필터         | `.filter()`   | 조건에 맞는 데이터 추리기 |
-| Screen Input Parameter | `useParams()` | 화면 간 값 전달           |
+| ODC                            | React                 | 하는 일                   |
+| ------------------------------ | --------------------- | ------------------------- |
+| Web Block                      | 컴포넌트              | 반복되는 화면 조각        |
+| Input Parameter                | props                 | 조각에 넘기는 값          |
+| Local Variable                 | `useState`            | 화면이 기억하는 값        |
+| List Widget                    | `.map()`              | 목록 반복                 |
+| Aggregate 필터                 | `.filter()`           | 조건에 맞는 데이터 추리기 |
+| Screen Input Parameter         | `useParams()`         | 화면 간 값 전달           |
+| Screen OnReady + Aggregate     | `useEffect` + `fetch` | 화면 진입 시 데이터 조회  |
+| REST API 연동 (Service Action) | `fetch`               | 외부 데이터 요청          |
 
-가장 크게 느낀 차이는 **목록 필터링**이었습니다.
+가장 크게 느낀 차이는 **중간 과정이 보이는지**였습니다.
 
-ODC에서는 Aggregate에 조건을 걸면 결과가 화면에 반영됩니다. 그 사이 과정은 플랫폼이 처리합니다.
-React에서는 그 과정을 직접 씁니다.
-
-```jsx
-const visibleRequests = requests.filter((req) => {
-  const matchKeyword = text.includes(keyword.toLowerCase());
-  const matchStatus = status === "전체" || req.status === status;
-  const matchPriority = priority === "전체" || req.priority === priority;
-  return matchKeyword && matchStatus && matchPriority;
-});
-```
-
-직접 쓰고 나서야 ODC에서 하던 일이 무엇이었는지 알았습니다.
-그리고 조건을 하나 더 얹을 때 어디를 고쳐야 할지 바로 알게 됐습니다.
+ODC에서는 Aggregate를 걸면 데이터가 와 있습니다. React에서는 요청을 보내고, 기다리고, 실패를 처리하는 단계를 전부 직접 씁니다. 번거롭지만 **어디서 무엇이 잘못될 수 있는지가 보입니다.**
 
 ---
 
@@ -135,7 +206,7 @@ const visibleRequests = requests.filter((req) => {
 
 ### 1. 계산은 맞는데 화면이 다른 값을 보고 있었다
 
-검색을 걸면 "총 N건" 은 정확히 줄어드는데 표는 그대로였습니다.
+검색을 걸면 "총 N건"은 정확히 줄어드는데 표는 그대로였습니다.
 원인은 `<tbody>` 가 걸러진 배열이 아니라 원본을 그대로 쓰고 있던 것이었습니다.
 
 ```jsx
@@ -148,8 +219,6 @@ const visibleRequests = requests.filter((req) => {
 
 ### 2. 서로 맞물린 상태는 같이 바꿔야 한다
 
-페이지네이션을 붙이면서 알게 된 부분입니다.
-
 3페이지를 보다가 검색어를 입력하면 결과는 5건으로 줄어드는데 `page` 는 여전히 3입니다.
 `slice(20, 30)` 이 빈 배열을 돌려주고, **건수는 5건인데 표는 텅 빈** 상태가 됩니다. 에러는 나지 않습니다.
 
@@ -159,7 +228,36 @@ const visibleRequests = requests.filter((req) => {
 onChange={(e) => { setKeyword(e.target.value); setPage(1) }}
 ```
 
-### 3. 배포한 뒤에야 드러나는 문제가 있다
+### 3. `fetch` 는 404가 와도 에러를 내지 않는다
+
+서버에 다녀오는 데 성공하면, 응답이 404든 500이든 `fetch` 는 성공으로 봅니다.
+그래서 응답 상태를 직접 확인해야 합니다.
+
+```js
+if (!res.ok) throw new Error(...)
+```
+
+이걸 빼면 에러 페이지의 HTML을 데이터인 줄 알고 화면에 넣으려다 엉뚱한 곳에서 터집니다.
+
+### 4. 서버에서 온 값으로 폼을 채우는 자리가 다르다
+
+처음에는 이렇게 썼습니다.
+
+```jsx
+const [impact, setImpact] = useState(req.impact);
+```
+
+데이터를 파일에서 읽을 때는 됐지만, API로 바꾸니 **첫 렌더 시점에 `req` 가 아직 `null`** 입니다.
+`useState` 의 초기값이 아니라 응답이 도착한 뒤에 넣어야 했습니다.
+
+```jsx
+.then((data) => {
+  setReq(data)
+  if (data) setImpact(data.impact)
+})
+```
+
+### 5. 배포한 뒤에야 드러나는 문제가 있다
 
 배포 후 대시보드에서 새로고침하면 404가 났습니다. 링크로 이동하는 건 정상이었습니다.
 
@@ -168,13 +266,11 @@ React Router는 브라우저 안에서 주소 표시만 바꾸고 화면을 갈�
 로컬 개발 서버는 이걸 알아서 처리해주기 때문에 **배포 전에는 절대 나타나지 않습니다.**
 
 ```json
-// vercel.json — 어떤 주소로 들어오든 index.html을 내준다
-{
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
-}
+// vercel.json
+{ "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }] }
 ```
 
-### 4. 화면이 맞아도 데이터가 이상하면 화면이 이상해진다
+### 6. 화면이 맞아도 데이터가 이상하면 화면이 이상해진다
 
 대시보드 숫자를 검산하다가 **SLA 임박·초과가 전체 미해결과 같은 18건**인 것을 발견했습니다.
 
@@ -183,7 +279,7 @@ React Router는 브라우저 안에서 주소 표시만 바꾸고 화면을 갈�
 종결된 요청은 과거로, 미해결 요청은 최근으로 날짜를 다시 배치해 해결했습니다.
 **화면을 의심하기 전에 데이터를 먼저 봐야 하는 경우**가 있다는 걸 알게 됐습니다.
 
-### 5. 이름이 틀리면 조용히 넘어간다
+### 7. 이름이 틀리면 조용히 넘어간다
 
 가장 시간을 많이 쓴 부류입니다. 전부 에러 없이 잘못된 화면만 나옵니다.
 
@@ -192,7 +288,7 @@ React Router는 브라우저 안에서 주소 표시만 바꾸고 화면을 갈�
 - `<statusCount />` — 소문자로 시작하면 React가 HTML 태그로 취급해 그냥 넘어감
 - `s.replace('', 'T')` — 공백 대신 빈 문자열을 찾아 `Invalid Date` 가 됨
 
-화면이 이상한데 콘솔이 조용하면 **개발자 도구에서 실제 결과물을 보는 것**이 가장 빨랐습니다. 클래스명이 무엇으로 찍혔는지 한 번 보면 대부분 끝났습니다.
+화면이 이상한데 콘솔이 조용하면 **개발자 도구에서 실제 결과물을 보는 것**이 가장 빨랐습니다. API를 붙인 뒤로는 Network 탭에서 상태 코드와 응답을 먼저 봅니다.
 
 ---
 
@@ -204,10 +300,24 @@ React Router는 브라우저 안에서 주소 표시만 바꾸고 화면을 갈�
 
 - 목록의 `visibleRequests` — `requests` 와 필터값으로 계산
 - 상세의 `priority` — 영향도와 긴급도로 계산
-- 대시보드의 모든 숫자 — `requests` 로 계산 (`useState` 가 한 줄도 없습니다)
+- 대시보드의 모든 숫자 — `requests` 로 계산
 
 상태가 적을수록 어긋날 자리가 줄어듭니다.
 그리고 **우선순위처럼 규칙으로 정해져야 하는 값은, 계산으로만 존재하게 두는 것이 곧 설계**라는 것도 알게 됐습니다.
+
+### 비동기는 성공만 생각하면 안 된다
+
+파일에서 읽을 때는 데이터가 항상 거기 있었습니다. 서버에서 받아오니 **아직 안 온 상태**와 **실패한 상태**가 생겼습니다.
+
+화면을 만들 때 이제 세 가지를 같이 생각합니다 — 불러오는 중, 실패, 성공.
+이 중 하나라도 빠지면 사용자는 빈 화면을 보고 고장난 줄 압니다.
+
+### 환경변수는 두 군데서 관리된다
+
+`.env` 는 저장소에 올리지 않으므로, 배포 환경에는 플랫폼(Vercel) 설정에 따로 넣어야 합니다.
+그리고 `VITE_` 변수는 빌드 시 코드에 포함되므로 **브라우저에서 볼 수 있습니다.**
+
+환경변수로 빼는 이유는 "숨기기 위해서"가 아니라 **저장소에 올리지 않고, 환경마다 다른 값을 쓰기 위해서**입니다. 진짜 감춰야 하는 키는 브라우저가 아니라 서버 쪽에서 써야 한다는 구분을 이번에 알게 됐습니다.
 
 ### 플랫폼이 해주던 일을 알게 됐다
 
@@ -220,8 +330,9 @@ React에서 `StatusBadge`, `PriorityTag`, `StatCard` 를 분리해보고 나서�
 ### 아직 부족한 부분
 
 - 상태 관리는 `useState` 수준입니다. 화면이 늘어나 데이터를 공유해야 하면 다른 방법이 필요할 텐데 아직 다뤄보지 않았습니다.
-- 서버 연동 경험이 없습니다. 목업 배열을 읽는 것과 API를 호출하는 것은 다른 문제라고 알고 있습니다.
-- `useEffect` 를 아직 쓸 일이 없어 익히지 못했습니다.
+- 요청을 보낼 때마다 `useEffect` 로 직접 짜고 있습니다. 캐싱이나 재요청을 관리해주는 라이브러리(TanStack Query 등)가 있다는 것은 알지만 써보지 않았습니다.
+- TypeScript를 쓰지 않았습니다.
+- 인증이 없습니다. 지금은 목업 데이터라 누구나 조회·수정할 수 있도록 열어뒀고, 실제 서비스라면 로그인한 사용자만 수정하도록 제한해야 합니다.
 
 ---
 
@@ -229,6 +340,16 @@ React에서 `StatusBadge`, `PriorityTag`, `StatCard` 를 분리해보고 나서�
 
 ```bash
 npm install
+```
+
+프로젝트 루트에 `.env` 파일을 만들고 Supabase 정보를 넣습니다.
+
+```
+VITE_SUPABASE_URL=https://xxxxxxxx.supabase.co
+VITE_SUPABASE_KEY=...
+```
+
+```bash
 npm run dev
 ```
 
@@ -238,8 +359,9 @@ npm run dev
 
 ```
 src/
+  api/
+    requests.js      API 호출 (조회 · 단건 조회 · 수정)
   data/
-    requests.js      목업 데이터 30건
     priority.js      우선순위 산출 규칙 (PriorityMatrix)
   components/
     StatusBadge.jsx
