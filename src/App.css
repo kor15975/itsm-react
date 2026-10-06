@@ -920,3 +920,32 @@ table {
 @media (max-width: 560px) {
   .stat-grid { grid-template-columns: 1fr; }
 }
+
+.empty.err { color: #b42318; background: #fff6f5; border-color: #f3d4d1; }
+
+.save-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #f2f4f8;
+}
+
+.btn-save {
+  height: 38px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--indigo);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.btn-save:hover:not(:disabled) { background: #4338ca; }
+.btn-save:disabled { background: #d5d8e2; cursor: default; }
+
+.save-msg { font-size: 13px; color: var(--gray); }

@@ -1,5 +1,6 @@
+import { useState, useEffect } from 'react'
 import { Link } from "react-router-dom";
-import { requests } from "../data/requests";
+import { fetchRequests } from '../api/requests'
 import { STATUSES } from "../data/priority";
 import StatusBadge, {STATUS_CLASS} from "../components/StatusBadge";
 import PriorityTag from "../components/PriorityTag";
@@ -7,15 +8,45 @@ import StatCard from "../components/StatCard";
 
 const OPEN = ['접수중', '배정완료', '처리중', '답변완료']
 
+// 목업 데이터 기준 시각 (실제 서비스에서는 new Date())
+const NOW = new Date('2026-09-24T10:00:00')
+
 function toDate(s){
     return new Date(s.replace(' ', 'T'))
 }
 
-function Dashboard(){
-    const NOW = new Date('2026-09-24T10:00:00')
-    const now = NOW
+function Dashboard() {
+  const [requests, setRequests] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
-    const openList = requests.filter((r) => OPEN.includes(r.status))
+  useEffect(() => {
+    fetchRequests()
+      .then((data) => setRequests(data))
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="page">
+        <h1 className="page-title">관리자 대시보드</h1>
+        <p className="empty">불러오는 중입니다...</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="page">
+        <h1 className="page-title">관리자 대시보드</h1>
+        <p className="empty err">{error}</p>
+      </div>
+    )
+  }
+
+  const now = NOW
+const openList = requests.filter((r) => OPEN.includes(r.status))
     const aiPending = requests.filter((r) => r.status === '접수중')
     const urgentList = openList.filter((r) => r.priority === '긴급' || r.priority === '높음')
     const slaRisk = openList.filter((r) => toDate(r.dueAt) - now < 4*60*60*1000)

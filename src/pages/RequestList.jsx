@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { requests } from "../data/requests";
+import { useState, useEffect } from "react";
+import { fetchRequests } from '../api/requests'
 import {STATUSES} from "../data/priority"
 import { Link } from "react-router-dom";
 import StatusBadge from "../components/StatusBadge";
@@ -9,7 +9,18 @@ import PriorityTag from "../components/PriorityTag";
 
 function RequestList() {
 const [keyword, setKeyword] = useState('')
-const [status, setStatus] = useState('전체')
+  const [status, setStatus] = useState('전체')
+  const [page, setPage] = useState(1)        // ← 여기로
+  const [requests, setRequests] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    fetchRequests()
+      .then((data) => setRequests(data))
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [])
 
 const visibleRequests = requests.filter((req) => {
     const text = (req.id + req.title + req.requester + (req.assignee || '')).toLowerCase()
@@ -19,13 +30,31 @@ const visibleRequests = requests.filter((req) => {
 
 })
 const PER_PAGE = 10
-const [page, setPage] = useState(1)
+
 
 const totalPages = Math.ceil(visibleRequests.length / PER_PAGE)
 const pageItems = visibleRequests.slice((page - 1) * PER_PAGE, page * PER_PAGE)
 
 const pageNumbers = []
 for (let i = 1 ; i <= totalPages; i++) pageNumbers.push(i)
+    if (loading) {
+    return (
+      <div className="page">
+        <h1 className="page-title">관리자 요청 목록</h1>
+        <p className="empty">불러오는 중입니다...</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="page">
+        <h1 className="page-title">관리자 요청 목록</h1>
+        <p className="empty err">{error}</p>
+      </div>
+    )
+  }
+  
   return (
     <div className="page">
       <h1 className="page-title">관리자 요청 목록</h1>

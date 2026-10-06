@@ -1,33 +1,103 @@
-import { useState } from "react";
+import { useState, useEffect } from 'react'
 import { useParams, Link } from "react-router-dom";
-import { requests } from "../data/requests";
+import { fetchRequest, updateRequest } from '../api/requests'
 import { getPriority, LEVELS } from "../data/priority";
 import StatusBadge from "../components/StatusBadge";
 import PriorityTag from "../components/PriorityTag";
 
-const ASSIGNEES = [...new Set(requests.map((r) => r.assignee).filter(Boolean))]
 
-function RequestDetail(){
-    const {id} = useParams ()
-    const req = requests.find((r) => r.id === id)
+// 담당자 목록 — 실제 서비스라면 사용자 API에서 받아옵니다
 
-    const [impact, setImpact] = useState(req?.impact || '보통')
-    const [urgency, setUrgency] = useState(req?.urgency || '보통')
-    const [assignee, setAssignee] = useState(req?.assignee || '')
 
-    const priority = getPriority(impact,urgency)
-    const changed = priority !== req?.priority
+const ASSIGNEES = ['2AD_담당자', '박지훈', '정현우', '윤도현', '오지명']
 
-    if(!req){
-        return(
-            <div className="page">
-                <Link to="/" className="back-link">← 목록으로</Link>
-                <p className="empty">존재하지 않는 요청입니다.</p>
-            </div>
-        )
+function RequestDetail() {
+const { id } = useParams()
+
+  const [req, setReq] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  const [impact, setImpact] = useState('보통')
+  const [urgency, setUrgency] = useState('보통')
+  const [assignee, setAssignee] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveMsg, setSaveMsg] = useState('')
+
+  useEffect(() => {
+    setLoading(true)
+    setError(null)
+
+    fetchRequest(id)
+      .then((data) => {
+        setReq(data)
+        if (data) {
+          setImpact(data.impact)
+          setUrgency(data.urgency)
+          setAssignee(data.assignee || '')
+        }
+      })
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [id])
+
+const priority = getPriority(impact, urgency)
+  const changed = req && priority !== req.priority
+
+    const dirty =
+    req &&
+    (impact !== req.impact ||
+      urgency !== req.urgency ||
+      (assignee || '') !== (req.assignee || ''))
+
+  async function handleSave() {
+    setSaving(true)
+    setSaveMsg('')
+
+    try {
+      const updated = await updateRequest(req.id, {
+        impact: impact,
+        urgency: urgency,
+        priority: priority,
+        assignee: assignee || null,
+      })
+      setReq(updated)
+      setSaveMsg('저장되었습니다.')
+    } catch (err) {
+      setSaveMsg(err.message)
+    } finally {
+      setSaving(false)
     }
+  }
 
-    return(
+  if (loading) {
+    return (
+      <div className="page">
+        <Link to="/" className="back-link">← 목록으로</Link>
+        <p className="empty">불러오는 중입니다...</p>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="page">
+        <Link to="/" className="back-link">← 목록으로</Link>
+        <p className="empty err">{error}</p>
+      </div>
+    )
+  }
+
+  if (!req) {
+    return (
+      <div className="page">
+        <Link to="/" className="back-link">← 목록으로</Link>
+        <p className="empty">존재하지 않는 요청입니다.</p>
+      </div>
+    )
+  }
+
+  return (
         <div className="page">
             <Link to ="/" className="back-link">← 목록으로</Link>
             <div className="detail-head">
@@ -106,13 +176,19 @@ function RequestDetail(){
                         </div>
                         {changed && (
                             <p className="prio-changed">
-                                AI 추천값({req.impact} / {req.urgency} 기준으로는 <b>{req.priority}</b> 였습니다.)
+                                AI 추천값({req.impact} / {req.urgency}) 기준으로는 <b>{req.priority}</b> 였습니다.
                             </p>
                         )}
                         <div className="sla-box">
                             <div><span>처리 기한</span><strong>{req.dueAt}</strong></div>
                             <div><span>완료 일시</span><strong>{req.completedAt || '미완료'}</strong></div>
                         </div>
+                          <div className="save-row">
+    <button className="btn-save" onClick={handleSave} disabled={saving || !dirty}>
+      {saving ? '저장 중...' : '변경사항 저장'}
+    </button>
+    {saveMsg && <span className="save-msg">{saveMsg}</span>}
+  </div>
                     </section>
                 </div>
                 <aside className="detail-side">
